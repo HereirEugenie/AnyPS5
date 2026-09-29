@@ -1,0 +1,63 @@
+name: Ultimate PS5 Game Porting
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_url:
+        description: 'הדבק כאן את קישור ההורדה הישיר של קובץ ה-ELF שלך'
+        required: true
+        type: string
+
+jobs:
+  port-game:
+    runs-on: windows-latest
+    
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup MSYS2 and Toolchain
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        install: >-
+          mingw-w64-ucrt-x86_64-gcc
+          mingw-w64-ucrt-x86_64-cmake
+          mingw-w64-ucrt-x86_64-ninja
+          mingw-w64-ucrt-x86_64-vulkan-devel
+          curl
+
+    - name: 1. Compile AnyPS5
+      run: |
+        mkdir build && cd build
+        cmake -G "Ninja" ..
+        ninja
+        find . -name "*.exe" -exec cp {} ../ \;
+        find . -name "*.dll" -exec cp {} ../ \;
+
+    - name: 2. Download PS5 Game ELF from Cloud
+      run: |
+        mkdir input_game
+        curl -L "${{ github.event.inputs.game_url }}" -o ./input_game/game.elf
+
+    - name: 3. Run Relinker to Create Windows Port
+      run: |
+        mkdir output_port
+        ./relinker.exe ./input_game/game.elf ./output_port/game_windows.exe --windows --to-intel
+
+    - name: 4. Package DLLs
+      run: |
+        cp *.dll ./output_port/
+
+    - name: Upload Finished Port to GitHub
+      uses: actions/upload-artifact@v4
+      with:
+        name: Finished-Windows-Port
+        path: ./output_port/
